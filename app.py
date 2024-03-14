@@ -49,15 +49,22 @@ transform = Compose([
 def predict_depth(model, image):
     return model(image)
 
+def depth_to_distance(depth_map):
+    # Conversion logic from depth map to distance estimation
+    # This can vary depending on how depth was calculated
+    # Example: distance = 1 / depth
+    distance_map = 1 / (depth_map + 1e-6)  # Small epsilon added to avoid division by zero
+    return distance_map
+
 with gr.Blocks(css=css) as demo:
     gr.Markdown(title)
     gr.Markdown(description)
-    gr.Markdown("### Depth Prediction demo")
-    gr.Markdown("You can slide the output to compare the depth prediction with input image")
+    gr.Markdown("### Distance Estimation demo")
+    gr.Markdown("You can slide the output to compare the distance estimation with input image")
 
     with gr.Row():
         input_image = gr.Image(label="Input Image", type='numpy', elem_id='img-display-input')
-        depth_image_slider = ImageSlider(label="Depth Map with Slider View", elem_id='img-display-output', position=0.5)
+        distance_image_slider = ImageSlider(label="Distance Map with Slider View", elem_id='img-display-output', position=0.5)
     raw_file = gr.File(label="16-bit raw depth (can be considered as disparity)")
     submit = gr.Button("Submit")
 
@@ -73,22 +80,22 @@ with gr.Blocks(css=css) as demo:
         depth = predict_depth(model, image)
         depth = F.interpolate(depth[None], (h, w), mode='bilinear', align_corners=False)[0, 0]
 
-        raw_depth = Image.fromarray(depth.cpu().numpy().astype('uint16'))
-        tmp = tempfile.NamedTemporaryFile(suffix='.png', delete=False)
-        raw_depth.save(tmp.name)
+        distance_map = depth_to_distance(depth)
 
-        depth = (depth - depth.min()) / (depth.max() - depth.min()) * 255.0
-        depth = depth.cpu().numpy().astype(np.uint8)
-        colored_depth = cv2.applyColorMap(depth, cv2.COLORMAP_INFERNO)[:, :, ::-1]
+        # Post-process distance map as needed, e.g., normalization
+        distance_map = (distance_map - distance_map.min()) / (distance_map.max() - distance_map.min()) * 255.0
+        distance_map = distance_map.cpu().numpy().astype(np.uint8)
 
-        return [(original_image, colored_depth), tmp.name]
+        colored_distance_map = cv2.applyColorMap(distance_map, cv2.COLORMAP_JET)[:, :, ::-1]
 
-    submit.click(on_submit, inputs=[input_image], outputs=[depth_image_slider, raw_file])
+        return [(original_image, colored_distance_map), None]  # No need to save raw depth as distance estimation doesn't use it
+
+    submit.click(on_submit, inputs=[input_image], outputs=[distance_image_slider, raw_file])
 
     example_files = os.listdir('assets/examples')
     example_files.sort()
     example_files = [os.path.join('assets/examples', filename) for filename in example_files]
-    examples = gr.Examples(examples=example_files, inputs=[input_image], outputs=[depth_image_slider, raw_file], fn=on_submit, cache_examples=False)
+    examples = gr.Examples(examples=example_files, inputs=[input_image], outputs=[distance_image_slider, raw_file], fn=on_submit, cache_examples=False)
     
 
 if __name__ == '__main__':
